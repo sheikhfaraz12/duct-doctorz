@@ -1,0 +1,99 @@
+{
+  "main": {
+    "phone": "+1 437-800-4378",
+    "whatsapp": "14378004378",
+    "facebook": "https://www.facebook.com/profile.php?id=61594471573922&rdid=Bv6QGjWuvbv2mByO&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2F1N2LGytdLb%2F#",
+    "email": "ductdoctorzgta@gmail.com"
+  },
+  "locations": [
+    {
+      "id": "gta",
+      "province": "on",
+      "provinceName": "Ontario",
+      "slug": "",
+      "name": "Greater Toronto Area",
+      "default": true,
+      "phone": "+1 437-800-4378",
+      "whatsapp": "14378004378",
+      "facebook": "https://www.facebook.com/profile.php?id=61594471573922&rdid=Bv6QGjWuvbv2mByO&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2F1N2LGytdLb%2F#",
+      "facebookName": "Revive Air Duct Care",
+      "email": "ductdoctorzgta@gmail.com",
+      "areas": ["Greater Toronto Area"],
+      "cover": "/assets/covers/gta.jpg"
+    },
+    {
+      "id": "ottawa",
+      "province": "on",
+      "provinceName": "Ontario",
+      "slug": "ottawa",
+      "name": "Ottawa",
+      "phone": "+1 613-908-1150",
+      "whatsapp": "16139081150",
+      "facebook": "https://www.facebook.com/profile.php?id=61592850459714",
+      "facebookName": "",
+      "email": "ductdoctorzgta@gmail.com",
+      "areas": ["Ottawa"],
+      "cover": "/assets/covers/ottawa.jpg"
+    },
+    {
+      "id": "calgary",
+      "province": "ab",
+      "provinceName": "Alberta",
+      "slug": "",
+      "name": "Calgary",
+      "default": true,
+      "phone": "+1 587-306-3566",
+      "whatsapp": "15873063566",
+      "facebook": "https://www.facebook.com/profile.php?id=61594627843103",
+      "facebookName": "",
+      "facebookSecondary": "https://www.facebook.com/profile.php?id=61593150240791",
+      "email": "ductdoctorzgta@gmail.com",
+      "areas": ["Calgary"],
+      "cover": "/assets/covers/calgary.jpg"
+    },
+    {
+      "id": "edmonton",
+      "province": "ab",
+      "provinceName": "Alberta",
+      "slug": "edmonton",
+      "name": "Edmonton",
+      "phone": "",
+      "whatsapp": "",
+      "facebook": "",
+      "facebookName": "",
+      "email": "ductdoctorzgta@gmail.com",
+      "areas": ["Edmonton"],
+      "cover": "/assets/covers/edmonton.jpg"
+    },
+    {
+      "id": "bc",
+      "province": "bc",
+      "provinceName": "British Columbia",
+      "slug": "",
+      "name": "British Columbia",
+      "default": true,
+      "phone": "",
+      "whatsapp": "",
+      "facebook": "",
+      "facebookName": "",
+      "email": "ductdoctorzgta@gmail.com",
+      "areas": [],
+      "cover": ""
+    },
+    {
+      "id": "sk",
+      "province": "sk",
+      "provinceName": "Saskatchewan",
+      "slug": "",
+      "name": "Saskatchewan",
+      "default": true,
+      "phone": "",
+      "whatsapp": "",
+      "facebook": "",
+      "facebookName": "",
+      "email": "ductdoctorzgta@gmail.com",
+      "areas": [],
+      "cover": ""
+    }
+  ]
+}

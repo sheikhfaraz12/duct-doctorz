@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    { "source": "/:province(on|ab|bc|sk)", "destination": "/index.html" },
+    { "source": "/:province(on|ab|bc|sk)/", "destination": "/index.html" },
+    { "source": "/:province(on|ab|bc|sk)/:slug", "destination": "/index.html" },
+    { "source": "/:province(on|ab|bc|sk)/:slug/", "destination": "/index.html" }
+  ]
+}
