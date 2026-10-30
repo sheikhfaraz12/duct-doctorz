@@ -1,6 +1,12 @@
 const FRAME_COUNT = 200;
 const FRAME_PATH = "/assets/frames/frame_";
 const FRAME_DIGITS = 4;
+const DESKTOP_FRAME_CACHE_LIMIT = 8;
+const MOBILE_FRAME_CACHE_LIMIT = 6;
+const FRAME_LOAD_CONCURRENCY = 3;
+const FRAME_WINDOW_RADIUS = 5;
+const INITIAL_FRAME_CHECK_COUNT = 10;
+const INITIAL_FRAME_READY_COUNT = 3;
 
 const PROVINCE_ORDER = ["on", "ab", "bc", "sk"];
 const FALLBACK_MAIN = { phone: "REPLACE_ME", whatsapp: "REPLACE_ME", facebook: "REPLACE_ME", email: "REPLACE_ME" };
@@ -9,18 +15,29 @@ let activeLocation = null;
 let queryRouting = false;
 let frameImages = new Map();
 let loadedFrameNumbers = [];
+let frameLoadQueue = [];
+let queuedFrameNumbers = new Set();
+let activeFrameLoads = new Map();
+let failedFrameNumbers = new Set();
+let completedInitialFrames = new Set();
+let loadedInitialFrames = new Set();
+let frameSequence = [];
 let targetFrame = 1;
 let currentFrame = 1;
 let animationFrame = 0;
+let scrollUpdateFrame = 0;
 let lastDrawnFrame = 0;
 let frameLoopRunning = false;
 let frameFailed = false;
+let visibleHeroCopy = "";
+let lastScrollHintVisible = true;
+let frameCacheLimit = window.innerWidth < 768 ? MOBILE_FRAME_CACHE_LIMIT : DESKTOP_FRAME_CACHE_LIMIT;
 
 const byId = (id) => document.getElementById(id);
 const heroWrapper = byId("hero-scroll");
 const heroStage = byId("hero-stage");
 const canvas = byId("hero-canvas");
-const canvasContext = canvas.getContext("2d");
+const canvasContext = canvas ? canvas.getContext("2d") : null;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const navigationEntry = performance.getEntriesByType("navigation")[0];
 const isPageReload = navigationEntry?.type === "reload";
@@ -46,7 +63,7 @@ function isLocalHost() {
 }
 
 function locationHref(location) {
-  if (isLocalHost()) {
+  if (queryRouting || isLocalHost()) {
     return `/?city=${encodeURIComponent(location.province)}${location.slug ? `&loc=${encodeURIComponent(location.slug)}` : ""}`;
   }
   return locationUrl(location);
@@ -99,7 +116,7 @@ function makeSelectOptions() {
 function configureCitySelects() {
   document.querySelectorAll("[data-city-select]").forEach((select) => {
     select.innerHTML = makeSelectOptions();
-    select.value = "";
+    select.value = activeLocation?.id || "";
     select.addEventListener("change", () => {
       const selectedLocation = siteData.locations.find((location) => location.id === select.value);
       if (selectedLocation) navigateTo(selectedLocation);
@@ -195,8 +212,12 @@ function renderCoverage() {
 
   if (isSet(activeLocation.cover) && activeLocation.cover.startsWith("/assets/")) {
     image.alt = `${activeLocation.name} service area`;
-    image.hidden = true;
-    image.onload = () => { image.hidden = false; imageWrap.hidden = false; };
+    imageWrap.hidden = false;
+    image.hidden = false;
+    image.style.opacity = "0";
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.onload = () => { image.style.opacity = "1"; imageWrap.hidden = false; };
     image.onerror = () => { image.hidden = true; imageWrap.hidden = true; };
     image.src = activeLocation.cover;
   } else {
@@ -359,13 +380,13 @@ function setupFaq() {
 function setupNavigation() {
   const menuButton = byId("menu-toggle");
   const menu = byId("mobile-menu");
-  menuButton.addEventListener("click", () => {
+  if (menuButton && menu) menuButton.addEventListener("click", () => {
     const expanded = menuButton.getAttribute("aria-expanded") === "true";
     menuButton.setAttribute("aria-expanded", String(!expanded));
     menuButton.setAttribute("aria-label", expanded ? "Open menu" : "Close menu");
     menu.hidden = expanded;
   });
-  menu.querySelectorAll('a[href^="#"]').forEach((link) => link.addEventListener("click", () => {
+  menu?.querySelectorAll('a[href^="#"]').forEach((link) => link.addEventListener("click", () => {
     menu.hidden = true;
     menuButton.setAttribute("aria-expanded", "false");
     menuButton.setAttribute("aria-label", "Open menu");
@@ -393,16 +414,38 @@ function updateHeroCopy(progress) {
   let visibleCopy = "one";
   if (progress >= 0.35 && progress <= 0.65) visibleCopy = "two";
   else if (progress >= 0.7) visibleCopy = "three";
-  document.querySelectorAll("[data-hero-copy]").forEach((copy) => {
-    copy.hidden = copy.dataset.heroCopy !== visibleCopy;
-  });
-  byId("scroll-hint").style.opacity = window.scrollY > 30 ? "0" : "1";
+  if (visibleHeroCopy !== visibleCopy) {
+    document.querySelectorAll("[data-hero-copy]").forEach((copy) => {
+      copy.hidden = copy.dataset.heroCopy !== visibleCopy;
+    });
+    visibleHeroCopy = visibleCopy;
+  }
+  const showScrollHint = window.scrollY <= 30;
+  if (showScrollHint !== lastScrollHintVisible) {
+    byId("scroll-hint").style.opacity = showScrollHint ? "1" : "0";
+    lastScrollHintVisible = showScrollHint;
+  }
 }
 
 function getProgress() {
+  if (!heroWrapper) return 0;
   const rect = heroWrapper.getBoundingClientRect();
   const availableScroll = Math.max(1, rect.height - window.innerHeight);
   return Math.max(0, Math.min(1, -rect.top / availableScroll));
+}
+
+function makeFrameSequence() {
+  const step = window.innerWidth < 768 ? 2 : 1;
+  const frames = [];
+  for (let frame = 1; frame <= FRAME_COUNT; frame += step) frames.push(frame);
+  if (frames[frames.length - 1] !== FRAME_COUNT) frames.push(FRAME_COUNT);
+  return frames;
+}
+
+function frameForProgress(progress) {
+  if (!frameSequence.length) return 1;
+  const position = Math.round(progress * (frameSequence.length - 1));
+  return frameSequence[position];
 }
 
 function nearestLoadedFrame(number) {
@@ -438,6 +481,7 @@ function animateFrames() {
   currentFrame += (targetFrame - currentFrame) * 0.2;
   if (Math.abs(targetFrame - currentFrame) < 0.5) currentFrame = targetFrame;
   drawFrame(Math.round(currentFrame));
+  queueFramesAroundTarget();
   if (Math.abs(targetFrame - currentFrame) >= 0.5) {
     frameLoopRunning = true;
     animationFrame = window.requestAnimationFrame(animateFrames);
@@ -453,7 +497,7 @@ function requestFrameRender() {
 }
 
 function resizeCanvas() {
-  if (!canvasContext || heroStage.classList.contains("is-static")) return;
+  if (!canvasContext || !canvas || !heroStage || heroStage.classList.contains("is-static")) return;
   const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
   canvas.width = Math.round(window.innerWidth * pixelRatio);
   canvas.height = Math.round(window.innerHeight * pixelRatio);
@@ -465,84 +509,161 @@ function resizeCanvas() {
 }
 
 function showStaticHero() {
-  if (frameFailed || heroStage.classList.contains("is-static")) return;
+  if (frameFailed || !heroStage || heroStage.classList.contains("is-static")) return;
   frameFailed = true;
   window.cancelAnimationFrame(animationFrame);
+  frameLoadQueue = [];
+  queuedFrameNumbers.clear();
+  activeFrameLoads.forEach((image) => { image.src = ""; });
+  activeFrameLoads.clear();
   heroStage.classList.add("is-static");
-  heroWrapper.classList.add("is-static");
-  canvas.hidden = true;
+  if (heroWrapper) heroWrapper.classList.add("is-static");
+  if (canvas) canvas.hidden = true;
   const image = byId("hero-static-image");
+  if (!image) return;
   image.onerror = () => {
     image.hidden = true;
     heroStage.classList.remove("has-static-image");
   };
   image.onload = () => heroStage.classList.add("has-static-image");
+  image.src = image.dataset.src || "/assets/images/hero.png";
 }
 
 function setFrameProgress(progress) {
-  if (heroStage.classList.contains("is-static")) return;
-  const rawIndex = 1 + progress * (FRAME_COUNT - 1);
-  const selectedIndex = window.innerWidth < 768
-    ? 1 + Math.round((rawIndex - 1) / 2) * 2
-    : Math.round(rawIndex);
-  targetFrame = Math.max(1, Math.min(FRAME_COUNT, selectedIndex));
+  if (!heroStage || heroStage.classList.contains("is-static")) return;
+  targetFrame = frameForProgress(progress);
+  queueFramesAroundTarget();
   requestFrameRender();
 }
 
-function onHeroScroll() {
+function updateHeroOnScroll() {
+  scrollUpdateFrame = 0;
+  if (!heroWrapper) return;
   const progress = getProgress();
   updateHeroCopy(progress);
   setFrameProgress(progress);
 }
 
-function preloadFrames() {
+function onHeroScroll() {
+  if (scrollUpdateFrame) return;
+  scrollUpdateFrame = window.requestAnimationFrame(updateHeroOnScroll);
+}
+
+function trimFrameCache() {
+  while (frameImages.size > frameCacheLimit) {
+    const removableFrames = [...frameImages.keys()]
+      .filter((frame) => frame !== 1)
+      .sort((a, b) => Math.abs(b - targetFrame) - Math.abs(a - targetFrame));
+    const frameToRemove = removableFrames[0];
+    if (frameToRemove === undefined) break;
+    frameImages.delete(frameToRemove);
+  }
+  loadedFrameNumbers = [...frameImages.keys()].sort((a, b) => a - b);
+}
+
+function updateInitialFrameLoader(frameNumber, loaded) {
+  if (frameSequence.indexOf(frameNumber) < INITIAL_FRAME_CHECK_COUNT) {
+    completedInitialFrames.add(frameNumber);
+    if (loaded) loadedInitialFrames.add(frameNumber);
+  }
+  const firstFrameLoaded = frameImages.has(1);
+  const readyEnough = loadedInitialFrames.size >= Math.min(INITIAL_FRAME_READY_COUNT, frameSequence.length);
+  const initialBatchFinished = completedInitialFrames.size >= Math.min(INITIAL_FRAME_CHECK_COUNT, frameSequence.length);
+  if (firstFrameLoaded && (readyEnough || initialBatchFinished)) {
+    heroStage?.classList.add("has-loaded");
+    const loader = byId("hero-loader");
+    if (loader) loader.hidden = true;
+  }
+  const percent = byId("loader-percent");
+  if (percent && frameSequence.length) {
+    percent.textContent = `${Math.round((completedInitialFrames.size / Math.min(INITIAL_FRAME_CHECK_COUNT, frameSequence.length)) * 100)}%`;
+  }
+}
+
+function loadFrame(frameNumber) {
+  if (frameImages.has(frameNumber) || failedFrameNumbers.has(frameNumber) || activeFrameLoads.has(frameNumber)) return;
+  const image = new Image();
+  image.decoding = "async";
+  image.fetchPriority = frameNumber === 1 ? "high" : "low";
+  activeFrameLoads.set(frameNumber, image);
+  image.onload = () => {
+    activeFrameLoads.delete(frameNumber);
+    if (frameFailed) return;
+    frameImages.set(frameNumber, image);
+    trimFrameCache();
+    updateInitialFrameLoader(frameNumber, true);
+    drawFrame(Math.round(currentFrame));
+    pumpFrameQueue();
+  };
+  image.onerror = () => {
+    activeFrameLoads.delete(frameNumber);
+    failedFrameNumbers.add(frameNumber);
+    updateInitialFrameLoader(frameNumber, false);
+    if (frameNumber === 1) {
+      showStaticHero();
+      return;
+    }
+    pumpFrameQueue();
+  };
+  image.src = `${FRAME_PATH}${String(frameNumber).padStart(FRAME_DIGITS, "0")}.jpg`;
+}
+
+function pumpFrameQueue() {
+  while (!frameFailed && activeFrameLoads.size < FRAME_LOAD_CONCURRENCY && frameLoadQueue.length) {
+    const frameNumber = frameLoadQueue.shift();
+    queuedFrameNumbers.delete(frameNumber);
+    loadFrame(frameNumber);
+  }
+}
+
+function queueFramesAroundTarget() {
+  if (frameFailed || !frameSequence.length) return;
+  const targetPosition = frameSequence.indexOf(targetFrame);
+  if (targetPosition < 0) return;
+  const desired = frameSequence.slice(
+    Math.max(0, targetPosition - FRAME_WINDOW_RADIUS),
+    Math.min(frameSequence.length, targetPosition + FRAME_WINDOW_RADIUS + 1)
+  );
+  const desiredSet = new Set(desired);
+  frameLoadQueue = frameLoadQueue.filter((frame) => desiredSet.has(frame));
+  queuedFrameNumbers = new Set(frameLoadQueue);
+  const candidates = desired
+    .filter((frame) => !frameImages.has(frame) && !failedFrameNumbers.has(frame) && !activeFrameLoads.has(frame))
+    .sort((a, b) => Math.abs(a - targetFrame) - Math.abs(b - targetFrame));
+  candidates.forEach((frame) => {
+    if (queuedFrameNumbers.has(frame)) return;
+    queuedFrameNumbers.add(frame);
+    frameLoadQueue.push(frame);
+  });
+  pumpFrameQueue();
+}
+
+function initializeHero() {
   if (reducedMotion.matches) {
     showStaticHero();
     return;
   }
-  const frameNumbers = [];
-  const step = window.innerWidth < 768 ? 2 : 1;
-  for (let frame = 1; frame <= FRAME_COUNT; frame += step) frameNumbers.push(frame);
-  if (step === 2 && frameNumbers[frameNumbers.length - 1] !== FRAME_COUNT) frameNumbers.push(FRAME_COUNT);
-  const readyTarget = Math.ceil(frameNumbers.length * 0.3);
-  let completed = 0;
-  let loaded = 0;
-  let firstFrameReady = false;
-  const loader = byId("hero-loader");
-  const percent = byId("loader-percent");
+  if (!canvas || !canvasContext || !heroStage) {
+    showStaticHero();
+    return;
+  }
+  frameSequence = makeFrameSequence();
+  resizeCanvas();
+  loadFrame(1);
+  queueFramesAroundTarget();
+}
 
-  frameNumbers.forEach((frameNumber) => {
-    const image = new Image();
-    const fileName = `${String(frameNumber).padStart(FRAME_DIGITS, "0")}.jpg`;
-    image.onload = () => {
-      frameImages.set(frameNumber, image);
-      loadedFrameNumbers.push(frameNumber);
-      loadedFrameNumbers.sort((a, b) => a - b);
-      loaded += 1;
-      completed += 1;
-      if (frameNumber === 1) {
-        firstFrameReady = true;
-        resizeCanvas();
-        drawFrame(1);
-      }
-      percent.textContent = `${Math.round((completed / frameNumbers.length) * 100)}%`;
-      if (firstFrameReady && (loaded >= readyTarget || completed === frameNumbers.length)) {
-        heroStage.classList.add("has-loaded");
-        loader.hidden = true;
-      }
-      if (firstFrameReady) requestFrameRender();
-    };
-    image.onerror = () => {
-      completed += 1;
-      percent.textContent = `${Math.round((completed / frameNumbers.length) * 100)}%`;
-      if (frameNumber === 1) showStaticHero();
-      if (firstFrameReady && completed === frameNumbers.length) {
-        heroStage.classList.add("has-loaded");
-        loader.hidden = true;
-      }
-    };
-    image.src = `${FRAME_PATH}${fileName}`;
-  });
+function setupHeroEvents() {
+  window.addEventListener("scroll", onHeroScroll, { passive: true });
+  window.addEventListener("resize", () => {
+    resizeCanvas();
+    frameSequence = makeFrameSequence();
+    frameCacheLimit = window.innerWidth < 768 ? MOBILE_FRAME_CACHE_LIMIT : DESKTOP_FRAME_CACHE_LIMIT;
+    trimFrameCache();
+    targetFrame = frameForProgress(getProgress());
+    queueFramesAroundTarget();
+    onHeroScroll();
+  }, { passive: true });
 }
 
 async function loadSiteData() {
@@ -559,11 +680,6 @@ async function loadSiteData() {
   }
 
   activeLocation = detectLocation();
-  if (isPageReload && activeLocation) {
-    window.location.replace("/");
-    return;
-  }
-
   if (activeLocation && (!Array.isArray(activeLocation.areas) || activeLocation.areas.length === 0)) {
     byId("service-areas").hidden = true;
   }
@@ -582,15 +698,6 @@ async function loadSiteData() {
   setupFaq();
   setupNavigation();
   setupReveal();
-  updateHeroCopy(0);
-  onHeroScroll();
-  resizeCanvas();
-  preloadFrames();
-  window.addEventListener("scroll", onHeroScroll, { passive: true });
-  window.addEventListener("resize", () => {
-    resizeCanvas();
-    onHeroScroll();
-  }, { passive: true });
 
   if (isPageReload && !window.location.hash) {
     const returnToTop = () => {
@@ -607,4 +714,6 @@ async function loadSiteData() {
   }
 }
 
+initializeHero();
+setupHeroEvents();
 loadSiteData();

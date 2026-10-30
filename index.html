@@ -11,6 +11,7 @@
   <meta property="og:url" content="https://ductdoctorz.com/">
   <meta name="twitter:card" content="summary">
   <link rel="icon" href="/assets/Duct Doctorz Favicon.png" type="image/png">
+  <link rel="preload" as="image" href="/assets/frames/frame_0001.jpg" fetchpriority="high">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800&display=swap" rel="stylesheet">
@@ -23,7 +24,7 @@
   <header class="site-header" id="site-header">
     <div class="header-inner">
       <a class="brand" href="/" aria-label="Duct Doctorz home">
-        <img src="/assets/logo/logo.png" alt="Duct Doctorz">
+        <img src="/assets/logo/logo.png" alt="Duct Doctorz" decoding="async" fetchpriority="high">
       </a>
       <nav class="primary-nav" aria-label="Main navigation">
         <a href="/">Home</a>
@@ -68,7 +69,7 @@
     <section class="hero-scroll" id="hero-scroll" aria-label="Duct Doctorz introduction">
       <div class="hero-stage" id="hero-stage">
         <canvas id="hero-canvas" aria-hidden="true"></canvas>
-        <img class="hero-static-image" id="hero-static-image" src="/assets/images/hero.png" alt="" aria-hidden="true">
+        <img class="hero-static-image" id="hero-static-image" data-src="/assets/images/hero.png" alt="" aria-hidden="true" loading="lazy" decoding="async">
         <div class="hero-scrim" aria-hidden="true"></div>
         <div class="hero-loader" id="hero-loader" role="status" aria-live="polite">
           <span class="loader-dot"></span>
@@ -237,7 +238,7 @@
     </div>
     <div class="footer-inner">
       <div class="footer-brand">
-        <a class="brand" href="/" aria-label="Duct Doctorz home"><img src="/assets/logo/logo.png" alt="Duct Doctorz"></a>
+        <a class="brand" href="/" aria-label="Duct Doctorz home"><img src="/assets/logo/logo.png" alt="Duct Doctorz" loading="lazy" decoding="async"></a>
         <p class="footer-tagline">Inspect. Diagnose. Clean. Verify.</p>
         <p class="footer-description">Thoughtful air duct and HVAC cleaning, with a clear process from first look to final review.</p>
       </div>
